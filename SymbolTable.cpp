@@ -51,7 +51,7 @@ bool checkValueType(string str) {
     return false;
 }
 bool checkInstruction(string cutS[]) {
-    if(cutS[0] == "BEGIN"|| cutS[0] == "END") {
+    if(cutS[0] == "BEGIN"|| cutS[0] == "END" || cutS[0] == "PRINT" || cutS[0] == "RPRINT") {
         if(cutS[1] == "" && cutS[2] == "" ) return true; return false;
     }
     else if (cutS[0] == "INSERT") {
@@ -73,6 +73,17 @@ bool checkInstruction(string cutS[]) {
     }
     return false;
 }
+/*string del0(string typeOval) {
+    
+    int cnt0 = 0;
+    for (size_t i = 0; i < typeOVal.size(); i++) {
+        if (typeOVal[i] == '0') cnt0 ++;
+        else break;
+    }
+    typeOVal.erase(0,cnt0);
+    if(typeOVal.size() == 0) typeOVal = "0";
+    
+}*/
 void SymbolTable::run(string filename) {
     ifstream fileIn;
     fileIn.open(filename, ios:: in);
@@ -91,80 +102,141 @@ void SymbolTable::run(string filename) {
         ide = cutS[0];
 
         if(ide == "BEGIN") {
-
+            //scope +1
+            scopeCur ++;
+            continue;
         }
         else if(ide == "END") {
-
-            //delete cac bien trong scope
+            if (scopeCur == 0) throw UnknownBlock();
+            delNodeinScope(record, scopeCur);
+            scopeCur --;
+            continue;
+            //delete all var in scope
         }
         else {
             name = cutS[1];
             typeOVal = cutS[2];
             //delete cutS;
             if (ide == "INSERT") {
-                Node* e = new Node(name, typeOVal, "",scopeCur);
                 if (containsInScope(record, name, scopeCur))
                     throw Redeclared(s);
-                
-                insert(record, e);
+                else {
+                    //Node* e = new Node(name, typeOVal,scopeCur);
+                    if (contains(record, name) == -1)
+                        insert(record, name, typeOVal, scopeCur);
+                    else {
+                        insertSameName(record, name, typeOVal, scopeCur);
+                    }
+                }
                 //loi redeclared
             }
             else if (ide == "ASSIGN") {
                 if(typeOVal[0] >= '0' && typeOVal[0] <= '9') {
-                    int cnt0 = 0;
-                    for (size_t i = 0; s[i] != 0; i++)
-                        cnt0 ++;
-                    typeOVal.erase(0,cnt0);
+                    //del0(typeOVal);
+                    int state = searchForAssign(record, name, "number");
+                    if(state == 0) {
+                        throw Undeclared(s);
+                    }else if(state == 1) {
+                        throw TypeMismatch(s);
+                    }
                     
+                } else if ((int)typeOVal[0] == 39) {
+                    int state = searchForAssign(record, name, "string");
+                    if(state == 0) {
+                        throw Undeclared(s);
+                    }else if(state == 1) {
+                        throw TypeMismatch(s);
+                    }
                     
-                }
-                else if (typeOVal[0] >= 'a' && typeOVal[0] <= 'z') {
-                
-                    /* code */
-                }
-                else if ((int)typeOVal[0] == 39)
-                {
-                    /* code */
-                }
-                
-                
 
+                } else if (typeOVal[0] >= 'a' && typeOVal[0] <= 'z') {
+                    
+                    if ((searchForAssign(record, name, "number") == 0 &&
+                    searchForAssign(record, name, "string")) || (
+                    searchForAssign(record, typeOVal, "number") &&
+                    searchForAssign(record, typeOVal, "string") ) ) {
+                        throw Undeclared(s);
+                    }
+                    else if ((searchForAssign(record, name, "number") == 2 &&
+                    searchForAssign(record, typeOVal, "number") == 2 )||
+                    (searchForAssign(record, name, "string") == 2 &&
+                     searchForAssign(record, typeOVal, "string") == 2) ) {
+                        1;
+                    }
+                    else {
+                        throw TypeMismatch(s);
+                    }
 
+                } 
                 // loi undeclared
                 // type mismatch
                 
             }
             
             else if (ide == "LOOKUP") {
-                
+                int scopeLook = contains(record, name);
+                if (scopeLook == -1) throw Undeclared(name);
+                else {cout << scopeLook << endl; continue;}
 
                 // undeclared
+            
+            }else if (ide == "PRINT") {
+                print(record, scopeCur);
+                continue;
+            } else if (ide == "RPRINT") {
+                reprint(record, scopeCur);
+                continue;
             }
         }
         
         cout << "success\n" ;
     }
+    if(scopeCur != 0) throw UnclosedBlock(scopeCur);
     fileIn.close();
 }
 
-bool SymbolTable :: insert(RecordVar& record, Node* element){
+void SymbolTable :: insert(RecordVar& record, string name, string type, int scope){
+    Node* element = new Node(name, type, scope);
     if(record.head == NULL) {
         record.head = element;
-        record.head ->next = NULL;
-        record.size ++; return true;
-    }
-        
-    else  {
-        Node *p = record.head;
-        while (p->next)
-            p = p -> next;
-        p -> next = element;
-        if(p != record.head) delete p;
+        record.tail = element;
+        record.tail ->next = NULL;
+        record.head ->prev = NULL;
         record.size ++;
-        return true;
+    } else { //add last
+        record.tail->next = element;
+        element->prev = record.tail;
+        record.tail = element;
+        record.tail->next = NULL;
+        record.size ++;
     }
-    
-    //else return false;
+    return;
+}
+void SymbolTable :: insertSameName(RecordVar& record, string name, string type, int scope) {
+    //add last
+    Node* element = new Node(name, type, scope);
+    record.tail->next = element;
+    element->prev = record.tail;
+    record.tail = element;
+    record.tail->next = NULL;
+    record.size ++;
+    //add last name
+    Node* p = record.head;
+    while(p) {
+        if (p->name == element->name) {
+            if(p->sameName == nullptr) {
+                p->sameName = element;
+            }
+            else {
+                Node* q = p;
+                while(!q->sameName) q = q->sameName;
+                q->sameName = element;
+                element->sameName = NULL;
+            }
+            return;
+        }
+        p = p ->next;
+    }
 }
 
 bool SymbolTable :: isEmpty(RecordVar& record) {
@@ -174,22 +246,81 @@ bool SymbolTable :: isEmpty(RecordVar& record) {
 
 bool SymbolTable :: containsInScope(RecordVar& record, string name, int scope) {
     if(record.head == nullptr && record.size == 0) return false;
-    Node* p = record.head;
+    Node* p = record.tail;
     while(p) {
-        if(p->name == name && p->scope == scope) {delete p; return true;}
-        p = p ->next;
+        if(p->name == name && p->scope == scope) {return true;}
+        p = p ->prev;
     }
-    delete p; return false;
+    //delete p;
+    return false;
+}
+int SymbolTable :: contains(RecordVar& record, string name) {
+    if(record.head == nullptr && record.size == 0) return -1;
+    Node* p = record.tail;
+    while(p) {
+        if(p->name == name) {/*delete p;*/ return p->scope;}
+        p = p ->prev;
+    }
+    /*delete p;*/ return -1;
 }
 
-bool SymbolTable :: searchAndAssign(RecordVar& record, string name) {
-    if(record.head == nullptr && record.size == 0) return false;
-    Node* p = record.head;
+int SymbolTable :: searchForAssign(RecordVar& record, string name, string type) {
+    if(record.head == nullptr && record.size == 0) return 0;
+    Node* p = record.tail;
     while(p) {
-        if (p->name == name) {delete p; return true;}
-        p = p->next;
+        if (p->name == name) {
+            if(p->type == type) return 2;
+            else return 1;
+        }
+        p = p->prev;
     }
-    delete p; return false;
+    /*delete p;*/ return 0;
+}
+void SymbolTable :: delNodeinScope(RecordVar& record, int scopeCur){
+    Node* p = record.tail;
+    while(p) {
+        if(p->scope == scopeCur -1) break;
+        p = p->prev;
+    }
+    record.tail = p;
+    record.tail->next = NULL;
+}
+void SymbolTable :: print(RecordVar& record, int scope) {
+    if(record.head == nullptr && record.size == 0) return;
+    for (size_t i = 0; i <= scope; i++) {
+        Node* p = record.head;
+        while(p) {
+            if(i == 0) {
+                if(p->sameName == nullptr && p->scope == 0)
+                    cout << p->name << "//" << p->scope << " ";
+            }
+            else if(p->sameName == nullptr) {
+                if(p->scope == i)
+                    cout << p->name << "//" << p->scope << " ";
+            }/*
+            else {
+                Node* q = p;
+                while(q->sameName) q= q->sameName;
+                if(q->scope == i) {
+                    cout << q->name << "//" << q->scope << " ";}
+                
+            }*/
+            p = p->next;
+        }
+    }
+    cout << endl;
+}
+void SymbolTable :: reprint(RecordVar& record, int scope) {
+    if(record.head == nullptr && record.size == 0) return;
+    for (int i = scope; i >= 0 ; i--) {
+        Node* p = record.tail;
+        while(p) {
+            if(p->sameName == nullptr && p->scope == i)
+                cout << p->name << "//" << p->scope << " ";
+            p = p->prev;
+        }
+    }
+    cout << endl;
 }
 
 
